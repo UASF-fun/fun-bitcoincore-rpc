@@ -1021,6 +1021,7 @@ pub enum StringOrStringArray {
 pub struct GetBlockchainInfoResult {
     /// Current network name as defined in BIP70 (main, test, signet, regtest)
     #[serde(deserialize_with = "deserialize_bip70_network")]
+    #[serde(serialize_with = "serialize_bip70_network")]
     pub chain: Network,
     /// The current number of blocks processed in the server
     pub blocks: u64,
@@ -2257,6 +2258,13 @@ where
         res.push(FromHex::from_hex(&h).map_err(D::Error::custom)?);
     }
     Ok(Some(res))
+}
+
+fn serialize_bip70_network<S>(network: &Network, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(network.to_core_arg())
 }
 
 /// deserialize_bip70_network deserializes a Bitcoin Core network according to BIP70
