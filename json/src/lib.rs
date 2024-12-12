@@ -18,6 +18,8 @@
 #![allow(deprecated)] // Because of `GetPeerInfoResultNetwork::Unroutable`.
 
 pub extern crate bitcoin;
+#[allow(unused)]
+#[macro_use] // `macro_use` is needed for v1.24.0 compilation.
 extern crate serde;
 extern crate serde_json;
 
@@ -52,7 +54,7 @@ pub mod serde_hex {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
         let hex_str: String = ::serde::Deserialize::deserialize(d)?;
-        FromHex::from_hex(&hex_str).map_err(D::Error::custom)
+        Ok(FromHex::from_hex(&hex_str).map_err(D::Error::custom)?)
     }
 
     pub mod opt {
@@ -604,6 +606,7 @@ pub struct GetRawTransactionResult {
     pub hash: bitcoin::Wtxid,
     pub size: usize,
     pub vsize: usize,
+    pub weight: usize,
     pub version: u32,
     pub locktime: u32,
     pub vin: Vec<GetRawTransactionResultVin>,
@@ -644,7 +647,7 @@ impl GetRawTransactionResult {
     }
 
     pub fn transaction(&self) -> Result<Transaction, encode::Error> {
-        encode::deserialize(&self.hex)
+        Ok(encode::deserialize(&self.hex)?)
     }
 }
 
@@ -713,7 +716,7 @@ pub struct GetTransactionResult {
 
 impl GetTransactionResult {
     pub fn transaction(&self) -> Result<Transaction, encode::Error> {
-        encode::deserialize(&self.hex)
+        Ok(encode::deserialize(&self.hex)?)
     }
 }
 
@@ -826,7 +829,7 @@ pub struct SignRawTransactionResult {
 
 impl SignRawTransactionResult {
     pub fn transaction(&self) -> Result<Transaction, encode::Error> {
-        encode::deserialize(&self.hex)
+        Ok(encode::deserialize(&self.hex)?)
     }
 }
 
@@ -915,6 +918,7 @@ pub enum ScriptPubkeyType {
     Witness_v0_ScriptHash,
     Witness_v1_Taproot,
     Witness_Unknown,
+    Anchor,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Deserialize, Serialize)]
@@ -1160,7 +1164,7 @@ impl<'a> serde::Serialize for ImportMultiRequestScriptPubkey<'a> {
         S: serde::Serializer,
     {
         match *self {
-            ImportMultiRequestScriptPubkey::Address(addr) => {
+            ImportMultiRequestScriptPubkey::Address(ref addr) => {
                 #[derive(Serialize)]
                 struct Tmp<'a> {
                     pub address: &'a Address,
@@ -1557,6 +1561,52 @@ pub enum GetBlockTemplateModes {
     // side.
 }
 
+/// Models the result of "getblock "blockhash" [verbosity=3]"
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct GetBlockVerboseResult {
+    /// The current block hash
+    pub hash: bitcoin::BlockHash,
+    /// The number of confirmations, or -1 if the block is not on the main chain
+    pub confirmations: i64,
+    /// The block size
+    pub size: u64,
+    /// The block size excluding witness data
+    pub strippedsize: u64,
+    /// The block weight as defined in BIP 141
+    pub weight: u64,
+    /// The block height or index
+    pub height: u64,
+    /// The block version
+    pub version: u32,
+    /// The block version formatted in hexadecimal
+    #[serde(rename = "versionHex", with = "crate::serde_hex")]
+    pub version_hex: Vec<u8>,
+    /// The merkle root
+    pub merkleroot: bitcoin::hash_types::TxMerkleNode,
+    /// The transaction ids
+    pub tx: Vec<GetBlockVerboseTransactionResult>,
+    /// The block time
+    pub time: usize,
+    /// The median block time expressed in UNIX epoch time
+    pub mediantime: Option<usize>,
+    /// The nonce
+    pub nonce: u32,
+    /// The bits
+    pub bits: String,
+    /// The difficulty
+    pub difficulty: f64,
+    /// Expected number of hashes required to produce the chain up to this block
+    #[serde(with = "crate::serde_hex")]
+    pub chainwork: Vec<u8>,
+    /// The number of transactions in the block
+    #[serde(rename = "nTx")]
+    pub n_tx: usize,
+    /// The hash of the previous block (if available)
+    pub previousblockhash: Option<bitcoin::BlockHash>,
+    /// The hash of the next block (if available)
+    pub nextblockhash: Option<bitcoin::BlockHash>,
+}
+
 /// Models the result of "getblocktemplate"
 #[derive(Clone, PartialEq, Eq, Debug, Deserialize, Serialize)]
 pub struct GetBlockTemplateResult {
@@ -1781,6 +1831,28 @@ pub struct DecodeRawTransactionResult {
     pub locktime: u32,
     pub vin: Vec<GetRawTransactionResultVin>,
     pub vout: Vec<GetRawTransactionResultVout>,
+}
+
+/// Model for Getblock tx verbosity 2
+#[derive(Clone, PartialEq, Eq, Debug, Deserialize, Serialize)]
+pub struct GetBlockVerboseTransactionResult {
+    pub txid: bitcoin::Txid,
+    pub hash: bitcoin::Wtxid,
+    pub size: u32,
+    pub vsize: u32,
+    pub weight: u32,
+    pub version: u32,
+    pub locktime: u32,
+    pub vin: Vec<GetRawTransactionResultVin>,
+    pub vout: Vec<GetRawTransactionResultVout>,
+    #[serde(
+        default,
+        with = "bitcoin::amount::serde::as_btc::opt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub fee: Option<Amount>,
+    #[serde(default, with = "crate::serde_hex")]
+    pub hex: Vec<u8>,
 }
 
 /// Models the result of "getchaintips"
